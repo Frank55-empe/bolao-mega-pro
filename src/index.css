@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #111827;
+}
+::-webkit-scrollbar-thumb {
+  background: #1f2937;
+  border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid #facc15;
+  outline-offset: 2px;
+}
+
+/* Número da Mega Sena: bolinha que também é botão. É o elemento de assinatura da tela de escolha. */
+.numero-bola {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  border: 2px solid #374151;
+  background: #1f2937;
+  color: #e5e7eb;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  user-select: none;
+}
+.numero-bola:hover {
+  border-color: #16a34a;
+  transform: translateY(-1px);
+}
+.numero-bola.selecionado {
+  background: #16a34a;
+  border-color: #facc15;
+  color: #052e12;
+  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.25);
+  animation: popIn 0.18s ease-out;
+}
+
+.input {
+  width: 100%;
+  background: #111827;
+  border: 1px solid #374151;
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  color: #f3f4f6;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.input:focus {
+  border-color: #16a34a;
+}
