@@ -1,0 +1,12 @@
+{
+  "name": "Bolão da Mega PRO",
+  "short_name": "Bolão PRO",
+  "description": "Participe do bolão da Mega Sena com praticidade e segurança.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#16a34a",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
