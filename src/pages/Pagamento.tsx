@@ -9,8 +9,8 @@ import { gerarPayloadPix } from '../utils/pix';
 
 // Chave PIX do responsável pelo bolão. Troque pela sua chave real
 // (pode ser e-mail, CPF/CNPJ, telefone ou chave aleatória).
-const CHAVE_PIX = '35991717912';
-const NOME_RECEBEDOR = 'PROF FRANK DE SOUZA BORGES';
+const CHAVE_PIX = 'seuemail@exemplo.com';
+const NOME_RECEBEDOR = 'PROF FRANK BORGES';
 const CIDADE_RECEBEDOR = 'IJACI';
 
 export default function Pagamento() {
