@@ -51,17 +51,4 @@ jobs:
       - name: Publicar no GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-        }
-function DIAGNOSTICO_CONCURSOS() {
-  const planilha = SpreadsheetApp.getActiveSpreadsheet();
-  const abaConcursos = planilha.getSheetByName('CONCURSOS');
-  const linhasBrutas = abaConcursos.getDataRange().getValues();
-
-  const listado = listarConcursos();
-  const ativo = obterConcursoAtivo();
-
-  const abaConfig = planilha.getSheetByName('CONFIG');
-  abaConfig.getRange('D3').setValue('BRUTO: ' + JSON.stringify(linhasBrutas));
-  abaConfig.getRange('D4').setValue('LISTADO: ' + JSON.stringify(listado));
-  abaConfig.getRange('D5').setValue('ATIVO: ' + JSON.stringify(ativo));
-}
+       
