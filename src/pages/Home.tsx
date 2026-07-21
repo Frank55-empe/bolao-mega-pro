@@ -6,6 +6,7 @@ import { formatarMoeda, formatarContagem } from '../utils/helpers';
 import { SkeletonCard } from '../components/LoadingSkeleton';
 import type { Concurso } from '../types';
 import { useApp } from '../context/AppContext';
+import { useToast } from '../context/ToastContext';
 
 export default function Home() {
   const [concurso, setConcurso] = useState<Concurso | null>(null);
