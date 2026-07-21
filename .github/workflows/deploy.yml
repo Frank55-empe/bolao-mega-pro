@@ -51,6 +51,7 @@ jobs:
       - name: Publicar no GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        }
 function DIAGNOSTICO_CONCURSOS() {
   const planilha = SpreadsheetApp.getActiveSpreadsheet();
   const abaConcursos = planilha.getSheetByName('CONCURSOS');
