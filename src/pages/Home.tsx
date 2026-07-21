@@ -13,6 +13,7 @@ export default function Home() {
   const [carregando, setCarregando] = useState(true);
   const [contagem, setContagem] = useState('');
   const { setConcursoAtivo } = useApp();
+  const { notificar } = useToast();
 
   useEffect(() => {
     api.concursos.ativo().then((resp) => {
@@ -20,6 +21,11 @@ export default function Home() {
         const c = resp.data as Concurso;
         setConcurso(c);
         setConcursoAtivo(c);
+      } else if (!resp.ok) {
+        notificar(resp.error || 'Não foi possível falar com o servidor. Veja o console (F12) para detalhes.', 'erro');
+        console.error('[concursos/ativo] falhou:', resp);
+      } else {
+        console.warn('[concursos/ativo] respondeu ok, mas sem concurso ativo (data vazio/null).');
       }
       setCarregando(false);
     });
