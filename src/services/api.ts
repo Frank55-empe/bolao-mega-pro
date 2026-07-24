@@ -1,15 +1,19 @@
 // Camada de comunicação com o backend (Google Apps Script Web App).
 //
-// IMPORTANTE sobre CORS com Apps Script:
-// O Apps Script não responde a "preflight" (requisição OPTIONS) do jeito que
-// um servidor comum responde. Se você mandar um POST com Content-Type
-// "application/json" o navegador dispara um preflight e o Apps Script derruba
-// a conexão (erro de CORS no console, mesmo o backend estando 100% certo).
+// IMPORTANTE — por que JSONP e não fetch():
+// O Google Apps Script não manda o cabeçalho "Access-Control-Allow-Origin"
+// de forma confiável para chamadas fetch() vindas de outro domínio (como o
+// GitHub Pages). Na prática isso significa: a requisição CHEGA e EXECUTA no
+// servidor certinho (por isso dados às vezes "sumiam" mesmo aparecendo na
+// planilha), mas o navegador BLOQUEIA a leitura da resposta por política de
+// CORS. JSONP contorna isso: em vez de fetch(), criamos uma tag <script> que
+// carrega a URL do Apps Script; tags <script> não são bloqueadas por CORS.
+// O Apps Script devolve JavaScript puro (não JSON) chamando uma função que a
+// gente registra antes, e essa função recebe os dados.
 //
-// A solução testada e estável: enviar o body como texto puro
-// (Content-Type: text/plain;charset=utf-8) e fazer o parse do JSON dentro do
-// Code.gs. Isso evita o preflight porque vira uma "requisição simples" aos
-// olhos do navegador. O código do Code.gs já está preparado para isso.
+// Isso também significa que TODA chamada (inclusive o que antes era POST)
+// agora viaja como GET com os dados dentro de um parâmetro de URL chamado
+// "payload" (uma string JSON). O Code.gs já está preparado para isso.
 
 import type { ApiResponse } from '../types';
 
@@ -22,6 +26,45 @@ if (!BASE_URL) {
   );
 }
 
+let contadorJsonp = 0;
+const TIMEOUT_MS = 15000;
+
+function requisitarJSONP<T>(query: Record<string, string>): Promise<ApiResponse<T>> {
+  return new Promise((resolve) => {
+    const callbackName = `bolaoCallback_${Date.now()}_${contadorJsonp++}`;
+    let finalizado = false;
+
+    const limpar = () => {
+      if (finalizado) return;
+      finalizado = true;
+      delete (window as unknown as Record<string, unknown>)[callbackName];
+      script.remove();
+      clearTimeout(timeoutId);
+    };
+
+    (window as unknown as Record<string, (data: ApiResponse<T>) => void>)[callbackName] = (data) => {
+      limpar();
+      resolve(data);
+    };
+
+    const params = new URLSearchParams({ ...query, callback: callbackName });
+    const script = document.createElement('script');
+    script.src = `${BASE_URL}?${params.toString()}`;
+
+    script.onerror = () => {
+      limpar();
+      resolve({ ok: false, error: 'Não foi possível conectar ao servidor (verifique a URL do Apps Script).' });
+    };
+
+    const timeoutId = setTimeout(() => {
+      limpar();
+      resolve({ ok: false, error: 'Tempo de conexão esgotado. Tente novamente.' });
+    }, TIMEOUT_MS);
+
+    document.body.appendChild(script);
+  });
+}
+
 type Metodo = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 interface RequisicaoParams {
@@ -31,13 +74,6 @@ interface RequisicaoParams {
   adminToken?: string;
 }
 
-/**
- * Faz uma chamada à API do Apps Script.
- * GET: parâmetros vão na query string.
- * POST/PUT/DELETE: o "metodo" real e os dados vão dentro do body (o Apps
- * Script só aceita GET/POST nativamente, então simulamos PUT/DELETE com um
- * campo "_metodo" que o backend interpreta).
- */
 export async function requisitar<T = unknown>({
   endpoint,
   metodo = 'GET',
@@ -45,35 +81,16 @@ export async function requisitar<T = unknown>({
   adminToken,
 }: RequisicaoParams): Promise<ApiResponse<T>> {
   try {
-    if (metodo === 'GET') {
-      const params = new URLSearchParams({ endpoint, ...(dados as Record<string, string>) });
-      if (adminToken) params.set('adminToken', adminToken);
-      const resp = await fetch(`${BASE_URL}?${params.toString()}`);
-      return await resp.json();
-    }
-
-    const payload = {
+    return await requisitarJSONP<T>({
       endpoint,
       _metodo: metodo,
-      adminToken,
-      ...dados,
-    };
-
-    const resp = await fetch(BASE_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8', // evita preflight, ver nota acima
-      },
-      body: JSON.stringify(payload),
+      adminToken: adminToken || '',
+      payload: JSON.stringify(dados),
     });
-
-    return await resp.json();
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Falha de conexão com o servidor.' };
   }
 }
-
-// ---- Atalhos por recurso, para não espalhar strings de endpoint pelo app ----
 
 export const api = {
   concursos: {

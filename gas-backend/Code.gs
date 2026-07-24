@@ -14,10 +14,17 @@
  * 6. Na primeira chamada, as abas (CONFIG, CONCURSOS, PARTICIPANTES,
  *    APOSTAS, PAGAMENTOS, LOGS, ESTATISTICAS) são criadas automaticamente.
  *
- * Sobre CORS: o frontend manda POST com Content-Type "text/plain" de
- * propósito — isso faz o navegador tratar a chamada como "requisição
- * simples" e pular o preflight (OPTIONS), que o Apps Script não sabe
- * responder. Não mude o Content-Type no frontend sem entender essa parte.
+ * IMPORTANTE — sobre CORS/JSONP:
+ * O Apps Script não manda o cabeçalho "Access-Control-Allow-Origin" de forma
+ * confiável para chamadas fetch() de outro domínio. Por isso o frontend usa
+ * JSONP (uma tag <script>, não fetch) para TODAS as chamadas — inclusive as
+ * que antes eram POST. Isso significa que tudo chega aqui como GET, com os
+ * dados dentro do parâmetro "payload" (uma string JSON), e o parâmetro
+ * "callback" diz o nome da função JavaScript que deve envolver a resposta.
+ * Por isso só existe doGet() abaixo — doPost() nunca mais é chamado pelo
+ * frontend, mas foi mantido por compatibilidade caso você queira integrar
+ * outra ferramenta que use POST de verdade (ex: chamadas server-to-server,
+ * que não sofrem bloqueio de CORS por não rodarem num navegador).
  */
 
 // ============================================================
@@ -45,89 +52,119 @@ const CABECALHOS = {
 const TOKEN_VALIDADE_SEGUNDOS = 6 * 60 * 60; // 6 horas de sessão de admin
 
 // ============================================================
-// ROTEAMENTO PRINCIPAL
+// ROTEAMENTO PRINCIPAL (tudo chega via GET, por causa do JSONP)
 // ============================================================
 
 function doGet(e) {
   try {
     garantirAbas();
-    const endpoint = e.parameter.endpoint;
-    const params = e.parameter;
+    const params = (e && e.parameter) || {};
+    const callback = params.callback;
 
-    switch (endpoint) {
-      case 'concursos':
-        return json({ ok: true, data: listarConcursos() });
-      case 'concursos/ativo':
-        return json({ ok: true, data: obterConcursoAtivo() });
-      case 'participantes':
-        if (!autenticado(params.adminToken)) return json({ ok: false, error: 'Não autorizado.' });
-        return json({ ok: true, data: listarApostasComParticipantes() });
-      case 'participantes/buscar':
-        return json({ ok: true, data: buscarParticipantePorWhatsapp(params.whatsapp) });
-      case 'apostas/consulta':
-        return json({ ok: true, data: consultarApostasPorWhatsapp(params.whatsapp) });
-      case 'dashboard':
-        if (!autenticado(params.adminToken)) return json({ ok: false, error: 'Não autorizado.' });
-        return json({ ok: true, data: montarDashboard() });
-      case 'config':
-        return json({ ok: true, data: obterConfig() });
-      default:
-        return json({ ok: false, error: 'Endpoint GET não encontrado: ' + endpoint });
+    let dados = {};
+    if (params.payload) {
+      try {
+        dados = JSON.parse(params.payload);
+      } catch (errParse) {
+        dados = {};
+      }
     }
+    Object.keys(params).forEach((chave) => {
+      if (['payload', 'callback', 'endpoint', '_metodo', 'adminToken'].indexOf(chave) === -1) {
+        dados[chave] = params[chave];
+      }
+    });
+
+    const resultado = processarRequisicao(params.endpoint, params._metodo || 'GET', dados, params.adminToken);
+    return responder(resultado, callback);
   } catch (err) {
     registrarLog('ERRO_GET', String(err), '-');
-    return json({ ok: false, error: 'Erro interno: ' + err });
+    return responder({ ok: false, error: 'Erro interno: ' + err }, e && e.parameter && e.parameter.callback);
   }
 }
 
+// Mantido por compatibilidade (ex.: integrações server-to-server que não
+// sofrem bloqueio de CORS). O frontend do site NÃO usa mais doPost.
 function doPost(e) {
   try {
     garantirAbas();
     const corpo = JSON.parse(e.postData.contents);
-    const endpoint = corpo.endpoint;
-    const metodo = corpo._metodo || 'POST'; // simula PUT/DELETE, já que o navegador só manda GET/POST facilmente
-
-    switch (endpoint) {
-      case 'login':
-        return json(login(corpo.senha));
-
-      case 'participantes':
-        return json(criarParticipante(corpo));
-
-      case 'apostas':
-        return json(criarAposta(corpo));
-
-      case 'pagamentos':
-        return json(confirmarPagamento(corpo));
-
-      case 'concursos': {
-        if (!autenticado(corpo.adminToken)) return json({ ok: false, error: 'Não autorizado.' });
-        if (metodo === 'PUT') return json(editarConcurso(corpo));
-        if (metodo === 'DELETE') return json(excluirConcurso(corpo.id));
-        return json(criarConcurso(corpo));
-      }
-
-      case 'apostas_status': // usado internamente pelo PUT de /apostas
-        if (!autenticado(corpo.adminToken)) return json({ ok: false, error: 'Não autorizado.' });
-        return json(alterarStatusAposta(corpo.id, corpo.status));
-
-      default:
-        // /apostas com _metodo PUT vem pelo mesmo endpoint "apostas"
-        if (endpoint === 'apostas' && metodo === 'PUT') {
-          if (!autenticado(corpo.adminToken)) return json({ ok: false, error: 'Não autorizado.' });
-          return json(alterarStatusAposta(corpo.id, corpo.status));
-        }
-        return json({ ok: false, error: 'Endpoint POST não encontrado: ' + endpoint });
-    }
+    const resultado = processarRequisicao(corpo.endpoint, corpo._metodo || 'POST', corpo, corpo.adminToken);
+    return responder(resultado, null);
   } catch (err) {
     registrarLog('ERRO_POST', String(err), '-');
-    return json({ ok: false, error: 'Erro interno: ' + err });
+    return responder({ ok: false, error: 'Erro interno: ' + err }, null);
   }
 }
 
-// Alguns navegadores/ambientes ainda mandam OPTIONS antes; respondemos vazio por segurança.
 function doOptions() {
   return ContentService.createTextOutput('');
+}
+
+/** Roteador único usado tanto pelo GET/JSONP quanto pelo POST legado. */
+function processarRequisicao(endpoint, metodo, dados, adminToken) {
+  switch (endpoint) {
+    case 'concursos':
+      if (metodo === 'PUT') {
+        if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' };
+        return editarConcurso(dados);
+      }
+      if (metodo === 'DELETE') {
+        if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' };
+        return excluirConcurso(dados.id);
+      }
+      if (metodo === 'POST') {
+        if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' };
+        return criarConcurso(dados);
+      }
+      return { ok: true, data: listarConcursos() };
+
+    case 'concursos/ativo':
+      return { ok: true, data: obterConcursoAtivo() };
+
+    case 'participantes':
+      if (metodo === 'POST') return criarParticipante(dados);
+      if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' };
+      return { ok: true, data: listarApostasComParticipantes() };
+
+    case 'participantes/buscar':
+      return { ok: true, data: buscarParticipantePorWhatsapp(dados.whatsapp) };
+
+    case 'apostas':
+      if (metodo === 'PUT') {
+        if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' };
+        return alterarStatusAposta(dados.id, dados.status);
+      }
+      return criarAposta(dados);
+
+    case 'apostas/consulta':
+      return { ok: true, data: consultarApostasPorWhatsapp(dados.whatsapp) };
+
+    case 'pagamentos':
+      return confirmarPagamento(dados);
+
+    case 'login':
+      return login(dados.senha);
+
+    case 'dashboard':
+      if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' };
+      return { ok: true, data: montarDashboard() };
+
+    case 'config':
+      return { ok: true, data: obterConfig() };
+
+    default:
+      return { ok: false, error: 'Endpoint não encontrado: ' + endpoint };
+  }
+}
+
+/** Monta a resposta: JSONP (JavaScript envolvendo a chamada do callback) ou JSON puro. */
+function responder(objeto, callback) {
+  if (callback) {
+    const js = callback + '(' + JSON.stringify(objeto) + ');';
+    return ContentService.createTextOutput(js).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(JSON.stringify(objeto)).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ============================================================
@@ -256,7 +293,6 @@ function linhaParaConcurso(l) {
 function obterConcursoAtivo() {
   const concursos = listarConcursos().filter((c) => c.status === 'ABERTO');
   if (concursos.length === 0) return null;
-  // Considera o último criado como o vigente.
   const ativo = concursos[concursos.length - 1];
   ativo.qtdParticipantes = contarApostasDoConcurso(ativo.id);
   return ativo;
@@ -331,7 +367,7 @@ function criarParticipante(dados) {
   const whatsappLimpo = String(dados.whatsapp).replace(/\D/g, '');
   const existente = buscarParticipantePorWhatsappBruto(whatsappLimpo);
   if (existente) {
-    return { ok: true, data: { id: existente.id } }; // participante recorrente: reaproveita o cadastro
+    return { ok: true, data: { id: existente.id } };
   }
 
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.PARTICIPANTES);
@@ -389,8 +425,6 @@ function criarAposta(dados) {
     return { ok: false, error: 'Números repetidos na aposta.' };
   }
 
-  // Trava de segurança: impede duplicar a MESMA combinação de números,
-  // pelo mesmo participante, no mesmo concurso (evita clique duplo / reenvio).
   const numerosOrdenados = [...dados.numeros].sort((a, b) => a - b).join(',');
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.APOSTAS);
   const linhas = aba.getDataRange().getValues();
@@ -403,7 +437,6 @@ function criarAposta(dados) {
     }
   }
 
-  // Checa se o concurso ainda está aberto e dentro do prazo.
   const concurso = listarConcursos().find((c) => c.id === dados.concursoId);
   if (!concurso) return { ok: false, error: 'Concurso não encontrado.' };
   if (concurso.status !== 'ABERTO') return { ok: false, error: 'Este concurso já está encerrado.' };
@@ -474,7 +507,6 @@ function alterarStatusAposta(id, novoStatus) {
   return { ok: false, error: 'Aposta não encontrada.' };
 }
 
-/** Junta apostas com dados do participante, para a tela admin de Participantes. */
 function listarApostasComParticipantes() {
   const abaApostas = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.APOSTAS);
   const abaParticipantes = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.PARTICIPANTES);
@@ -558,7 +590,7 @@ function montarDashboard() {
   return {
     totalParticipantes: participantesUnicos.size,
     valorArrecadado: valorArrecadado,
-    valorLiquido: valorArrecadado * 0.9, // 10% reservado para custos administrativos; ajuste como preferir
+    valorLiquido: valorArrecadado * 0.9,
     valorPremio: valorArrecadado * 0.9,
     totalPago: totalPago,
     totalPendente: totalPendente,
@@ -586,12 +618,4 @@ function registrarLog(acao, detalhe, usuario) {
   } catch (err) {
     // Nunca deixar uma falha de log quebrar a requisição principal.
   }
-}
-
-// ============================================================
-// HELPER DE RESPOSTA
-// ============================================================
-
-function json(objeto) {
-  return ContentService.createTextOutput(JSON.stringify(objeto)).setMimeType(ContentService.MimeType.JSON);
 }
