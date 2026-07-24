@@ -291,7 +291,10 @@ function linhaParaConcurso(l) {
 }
 
 function obterConcursoAtivo() {
-  const concursos = listarConcursos().filter((c) => c.status === 'ABERTO');
+  const agora = new Date();
+  const concursos = listarConcursos().filter((c) => {
+    return c.status === 'ABERTO' && new Date(c.dataLimite) > agora;
+  });
   if (concursos.length === 0) return null;
   const ativo = concursos[concursos.length - 1];
   ativo.qtdParticipantes = contarApostasDoConcurso(ativo.id);
@@ -310,6 +313,13 @@ function contarApostasDoConcurso(concursoId) {
 
 function criarConcurso(dados) {
   if (!dados.nome || !dados.dataLimite) return { ok: false, error: 'Nome e data limite são obrigatórios.' };
+  const dataLimiteObj = new Date(dados.dataLimite);
+  if (isNaN(dataLimiteObj.getTime())) {
+    return { ok: false, error: 'Data limite inválida. Selecione a data pelo calendário no formulário.' };
+  }
+  if (dataLimiteObj <= new Date()) {
+    return { ok: false, error: 'A data limite precisa ser no futuro (verifique se não ficou uma data já passada).' };
+  }
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.CONCURSOS);
   const id = 'C' + Utilities.getUuid().slice(0, 8);
   aba.appendRow([
@@ -335,7 +345,16 @@ function editarConcurso(dados) {
       if (dados.numero !== undefined) aba.getRange(linha, 3).setValue(dados.numero);
       if (dados.valorAposta !== undefined) aba.getRange(linha, 4).setValue(dados.valorAposta);
       if (dados.premioEstimado !== undefined) aba.getRange(linha, 5).setValue(dados.premioEstimado);
-      if (dados.dataLimite !== undefined) aba.getRange(linha, 6).setValue(new Date(dados.dataLimite));
+      if (dados.dataLimite !== undefined) {
+        const novaData = new Date(dados.dataLimite);
+        if (isNaN(novaData.getTime())) {
+          return { ok: false, error: 'Data limite inválida.' };
+        }
+        if (novaData <= new Date()) {
+          return { ok: false, error: 'A data limite precisa ser no futuro.' };
+        }
+        aba.getRange(linha, 6).setValue(novaData);
+      }
       if (dados.status !== undefined) aba.getRange(linha, 7).setValue(dados.status);
       registrarLog('CONCURSO_EDITADO', dados.id, '-');
       return { ok: true, data: { id: dados.id } };

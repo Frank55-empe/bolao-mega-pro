@@ -9,8 +9,10 @@ import { gerarPayloadPix } from '../utils/pix';
 
 // Chave PIX do responsável pelo bolão. Troque pela sua chave real
 // (pode ser e-mail, CPF/CNPJ, telefone ou chave aleatória).
-const CHAVE_PIX = 'seuemail@exemplo.com';
-const NOME_RECEBEDOR = 'PROF FRANK BORGES';
+// Chave PIX do responsável pelo bolão (Caixa Econômica — chave tipo telefone).
+// Formato exigido pelo Banco Central para chave telefone: +55 + DDD + número.
+const CHAVE_PIX = '+5535991717912';
+const NOME_RECEBEDOR = 'FRANK DE SOUZA BORGES';
 const CIDADE_RECEBEDOR = 'IJACI';
 
 export default function Pagamento() {
@@ -80,13 +82,21 @@ export default function Pagamento() {
       status: 'AGUARDANDO CONFERENCIA',
     });
 
-    setEnviando(false);
-
     if (!respAposta.ok) {
+      setEnviando(false);
       notificar(respAposta.error || 'Não foi possível registrar sua aposta. Tente novamente.', 'erro');
       return;
     }
 
+    // Registra também na aba PAGAMENTOS (fica com o histórico do PIX gerado
+    // e o comprovante, quando existir). Isso não bloqueia o fluxo se falhar
+    // por algum motivo — a aposta já foi criada, o que importa mais.
+    const idApostaCriada = (respAposta.data as { id: string })?.id;
+    if (idApostaCriada) {
+      await api.pagamentos.confirmar(idApostaCriada);
+    }
+
+    setEnviando(false);
     setProtocolo(protocoloLocal);
     setPago(true);
     notificar('Aposta registrada! Aguarde a confirmação do pagamento.', 'sucesso');

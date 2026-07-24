@@ -78,13 +78,19 @@ export default function AdminConcursos() {
 
   async function duplicar(c: Concurso) {
     if (!adminToken) return;
+    // Duplicar serve pra criar "o próximo" concurso — por isso a data limite
+    // NUNCA é copiada do original (que provavelmente já venceu). Sugere uma
+    // data 7 dias à frente; o admin pode editar depois clicando em "Editar".
+    const dataLimiteSugerida = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const resp = await api.concursos.criar(
-      { ...c, nome: `${c.nome} (cópia)`, numero: c.numero + 1 },
+      { ...c, nome: `${c.nome} (cópia)`, numero: c.numero + 1, dataLimite: dataLimiteSugerida },
       adminToken
     );
     if (resp.ok) {
-      notificar('Concurso duplicado.', 'sucesso');
+      notificar('Concurso duplicado com data limite sugerida para 7 dias à frente — edite se precisar ajustar.', 'sucesso');
       carregar();
+    } else {
+      notificar(resp.error || 'Não foi possível duplicar o concurso.', 'erro');
     }
   }
 
@@ -134,7 +140,14 @@ export default function AdminConcursos() {
             <input type="number" step="0.01" className="input" value={form.premioEstimado} onChange={(e) => setForm({ ...form, premioEstimado: Number(e.target.value) })} required />
           </Campo>
           <Campo label="Data limite para apostas">
-            <input type="datetime-local" className="input" value={form.dataLimite} onChange={(e) => setForm({ ...form, dataLimite: e.target.value })} required />
+            <input
+              type="datetime-local"
+              className="input"
+              value={form.dataLimite}
+              min={new Date(Date.now() + 5 * 60000).toISOString().slice(0, 16)}
+              onChange={(e) => setForm({ ...form, dataLimite: e.target.value })}
+              required
+            />
           </Campo>
           <div className="sm:col-span-2 flex gap-3 justify-end">
             <button type="button" onClick={() => setMostrarForm(false)} className="px-4 py-2 rounded-xl text-sm text-gray-300 hover:bg-white/5 focus-ring">
@@ -158,6 +171,15 @@ export default function AdminConcursos() {
                 <p className="text-sm text-gray-400">
                   {formatarMoeda(c.valorAposta)} por número · Prêmio {formatarMoeda(c.premioEstimado)} ·{' '}
                   <span className={c.status === 'ABERTO' ? 'text-primary-light' : 'text-gray-500'}>{c.status}</span>
+                </p>
+                <p className="text-xs mt-1">
+                  Fecha em: {new Date(c.dataLimite).toLocaleString('pt-BR')}
+                  {' '}
+                  {new Date(c.dataLimite) <= new Date() ? (
+                    <span className="text-red-400 font-semibold">(venceu — apostas bloqueadas)</span>
+                  ) : (
+                    <span className="text-gray-500">(ainda dentro do prazo)</span>
+                  )}
                 </p>
               </div>
               <div className="flex gap-1">
