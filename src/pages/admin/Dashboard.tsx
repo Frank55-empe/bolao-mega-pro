@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { Users, Wallet, TrendingUp, Clock } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
 import { useRequireAdmin } from '../../hooks/useRequireAdmin';
 import { api } from '../../services/api';
 import { formatarMoeda } from '../../utils/helpers';
@@ -11,7 +10,6 @@ import AdminNav from './AdminNav';
 
 export default function AdminDashboard() {
   const adminToken = useRequireAdmin();
-  const { } = useApp();
   const [dados, setDados] = useState<DashboardData | null>(null);
   const [carregando, setCarregando] = useState(true);
 
@@ -29,11 +27,8 @@ export default function AdminDashboard() {
     <div className="max-w-6xl mx-auto px-4 py-8">
       <AdminNav />
       <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
-
       {carregando ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
-        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}</div>
       ) : dados ? (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -42,7 +37,6 @@ export default function AdminDashboard() {
             <Cartao icone={<TrendingUp size={18} />} label="Prêmio líquido" valor={formatarMoeda(dados.valorLiquido)} />
             <Cartao icone={<Clock size={18} />} label="Pendente" valor={formatarMoeda(dados.totalPendente)} />
           </div>
-
           <div className="grid md:grid-cols-2 gap-6">
             <div className="bg-bg-card rounded-2xl p-5 border border-white/5">
               <h2 className="font-semibold mb-4 text-sm text-gray-300">Apostas por dia</h2>
@@ -56,7 +50,6 @@ export default function AdminDashboard() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-
             <div className="bg-bg-card rounded-2xl p-5 border border-white/5">
               <h2 className="font-semibold mb-4 text-sm text-gray-300">Por cidade</h2>
               <ResponsiveContainer width="100%" height={220}>
@@ -71,20 +64,10 @@ export default function AdminDashboard() {
             </div>
           </div>
         </>
-      ) : (
-        <p className="text-gray-400">Não foi possível carregar os dados.</p>
-      )}
+      ) : (<p className="text-gray-400">Não foi possível carregar os dados.</p>)}
     </div>
   );
 }
-
 function Cartao({ icone, label, valor }: { icone: React.ReactNode; label: string; valor: string }) {
-  return (
-    <div className="bg-bg-card rounded-2xl p-4 border border-white/5">
-      <div className="flex items-center gap-1.5 text-gray-400 text-xs mb-1">
-        {icone} {label}
-      </div>
-      <p className="font-bold text-lg">{valor}</p>
-    </div>
-  );
+  return (<div className="bg-bg-card rounded-2xl p-4 border border-white/5"><div className="flex items-center gap-1.5 text-gray-400 text-xs mb-1">{icone} {label}</div><p className="font-bold text-lg">{valor}</p></div>);
 }

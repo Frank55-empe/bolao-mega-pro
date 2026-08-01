@@ -4,41 +4,25 @@
  * Como implantar:
  * 1. Abra sua planilha Google Sheets (pode ser uma em branco).
  * 2. Extensões > Apps Script. Apague o conteúdo padrão e cole este arquivo.
- * 3. Rode a função `configurarSenhaAdmin` UMA VEZ pelo editor (selecione a
- *    função no topo, clique em Executar) para definir a senha do painel.
+ * 3. Rode a função `configurarSenhaAdmin` UMA VEZ pelo editor (edite a senha
+ *    dentro da função antes) para definir a senha do painel.
  * 4. Implantar > Nova implantação > tipo "App da Web".
- *    - Executar como: Eu (seu e-mail)
+ *    - Executar como: Eu
  *    - Quem pode acessar: Qualquer pessoa
- * 5. Copie a URL gerada (termina em /exec) e cole em VITE_API_URL no .env
- *    do frontend.
- * 6. Na primeira chamada, as abas (CONFIG, CONCURSOS, PARTICIPANTES,
- *    APOSTAS, PAGAMENTOS, LOGS, ESTATISTICAS) são criadas automaticamente.
+ * 5. Copie a URL gerada (termina em /exec) e cole em VITE_API_URL no .env.
+ * 6. Na primeira chamada, as abas são criadas automaticamente.
  *
  * IMPORTANTE — sobre CORS/JSONP:
- * O Apps Script não manda o cabeçalho "Access-Control-Allow-Origin" de forma
- * confiável para chamadas fetch() de outro domínio. Por isso o frontend usa
- * JSONP (uma tag <script>, não fetch) para TODAS as chamadas — inclusive as
- * que antes eram POST. Isso significa que tudo chega aqui como GET, com os
- * dados dentro do parâmetro "payload" (uma string JSON), e o parâmetro
- * "callback" diz o nome da função JavaScript que deve envolver a resposta.
- * Por isso só existe doGet() abaixo — doPost() nunca mais é chamado pelo
- * frontend, mas foi mantido por compatibilidade caso você queira integrar
- * outra ferramenta que use POST de verdade (ex: chamadas server-to-server,
- * que não sofrem bloqueio de CORS por não rodarem num navegador).
+ * O Apps Script não manda "Access-Control-Allow-Origin" de forma confiável
+ * pra chamadas fetch() de outro domínio. Por isso o frontend usa JSONP (uma
+ * tag <script>, não fetch) pra TODAS as chamadas. Tudo chega aqui como GET,
+ * com os dados dentro do parâmetro "payload" (uma string JSON) e o parâmetro
+ * "callback" dizendo o nome da função JS que envolve a resposta.
  */
 
-// ============================================================
-// CONSTANTES
-// ============================================================
-
 const ABA = {
-  CONFIG: 'CONFIG',
-  CONCURSOS: 'CONCURSOS',
-  PARTICIPANTES: 'PARTICIPANTES',
-  APOSTAS: 'APOSTAS',
-  PAGAMENTOS: 'PAGAMENTOS',
-  LOGS: 'LOGS',
-  ESTATISTICAS: 'ESTATISTICAS',
+  CONFIG: 'CONFIG', CONCURSOS: 'CONCURSOS', PARTICIPANTES: 'PARTICIPANTES',
+  APOSTAS: 'APOSTAS', PAGAMENTOS: 'PAGAMENTOS', LOGS: 'LOGS', ESTATISTICAS: 'ESTATISTICAS',
 };
 
 const CABECALHOS = {
@@ -49,10 +33,10 @@ const CABECALHOS = {
   LOGS: ['Data', 'Hora', 'Acao', 'Detalhe', 'Usuario'],
 };
 
-const TOKEN_VALIDADE_SEGUNDOS = 6 * 60 * 60; // 6 horas de sessão de admin
+const TOKEN_VALIDADE_SEGUNDOS = 6 * 60 * 60;
 
 // ============================================================
-// ROTEAMENTO PRINCIPAL (tudo chega via GET, por causa do JSONP)
+// ROTEAMENTO (tudo chega via GET, por causa do JSONP)
 // ============================================================
 
 function doGet(e) {
@@ -60,21 +44,15 @@ function doGet(e) {
     garantirAbas();
     const params = (e && e.parameter) || {};
     const callback = params.callback;
-
     let dados = {};
     if (params.payload) {
-      try {
-        dados = JSON.parse(params.payload);
-      } catch (errParse) {
-        dados = {};
-      }
+      try { dados = JSON.parse(params.payload); } catch (errParse) { dados = {}; }
     }
     Object.keys(params).forEach((chave) => {
       if (['payload', 'callback', 'endpoint', '_metodo', 'adminToken'].indexOf(chave) === -1) {
         dados[chave] = params[chave];
       }
     });
-
     const resultado = processarRequisicao(params.endpoint, params._metodo || 'GET', dados, params.adminToken);
     return responder(resultado, callback);
   } catch (err) {
@@ -83,8 +61,6 @@ function doGet(e) {
   }
 }
 
-// Mantido por compatibilidade (ex.: integrações server-to-server que não
-// sofrem bloqueio de CORS). O frontend do site NÃO usa mais doPost.
 function doPost(e) {
   try {
     garantirAbas();
@@ -97,68 +73,42 @@ function doPost(e) {
   }
 }
 
-function doOptions() {
-  return ContentService.createTextOutput('');
-}
+function doOptions() { return ContentService.createTextOutput(''); }
 
-/** Roteador único usado tanto pelo GET/JSONP quanto pelo POST legado. */
 function processarRequisicao(endpoint, metodo, dados, adminToken) {
   switch (endpoint) {
     case 'concursos':
-      if (metodo === 'PUT') {
-        if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' };
-        return editarConcurso(dados);
-      }
-      if (metodo === 'DELETE') {
-        if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' };
-        return excluirConcurso(dados.id);
-      }
-      if (metodo === 'POST') {
-        if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' };
-        return criarConcurso(dados);
-      }
+      if (metodo === 'PUT') { if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' }; return editarConcurso(dados); }
+      if (metodo === 'DELETE') { if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' }; return excluirConcurso(dados.id); }
+      if (metodo === 'POST') { if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' }; return criarConcurso(dados); }
       return { ok: true, data: listarConcursos() };
-
     case 'concursos/ativo':
       return { ok: true, data: obterConcursoAtivo() };
-
     case 'participantes':
       if (metodo === 'POST') return criarParticipante(dados);
       if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' };
       return { ok: true, data: listarApostasComParticipantes() };
-
     case 'participantes/buscar':
       return { ok: true, data: buscarParticipantePorWhatsapp(dados.whatsapp) };
-
     case 'apostas':
-      if (metodo === 'PUT') {
-        if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' };
-        return alterarStatusAposta(dados.id, dados.status);
-      }
+      if (metodo === 'PUT') { if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' }; return alterarStatusAposta(dados.id, dados.status); }
       return criarAposta(dados);
-
     case 'apostas/consulta':
       return { ok: true, data: consultarApostasPorWhatsapp(dados.whatsapp) };
-
     case 'pagamentos':
       return confirmarPagamento(dados);
-
     case 'login':
       return login(dados.senha);
-
     case 'dashboard':
       if (!autenticado(adminToken)) return { ok: false, error: 'Não autorizado.' };
       return { ok: true, data: montarDashboard() };
-
     case 'config':
       return { ok: true, data: obterConfig() };
-
     default:
       return { ok: false, error: 'Endpoint não encontrado: ' + endpoint };
   }
 }
 
-/** Monta a resposta: JSONP (JavaScript envolvendo a chamada do callback) ou JSON puro. */
 function responder(objeto, callback) {
   if (callback) {
     const js = callback + '(' + JSON.stringify(objeto) + ');';
@@ -186,7 +136,6 @@ function garantirAbas() {
       }
     }
   });
-
   const configAba = planilha.getSheetByName(ABA.CONFIG);
   if (configAba.getLastRow() === 0) {
     configAba.appendRow(['Chave', 'Valor']);
@@ -195,10 +144,6 @@ function garantirAbas() {
   }
 }
 
-/**
- * Rode esta função UMA VEZ manualmente pelo editor do Apps Script para
- * definir (ou trocar) a senha do painel administrativo.
- */
 function configurarSenhaAdmin() {
   const novaSenha = 'troque-esta-senha'; // <-- EDITE AQUI antes de rodar
   garantirAbas();
@@ -208,29 +153,22 @@ function configurarSenhaAdmin() {
 }
 
 // ============================================================
-// AUTENTICAÇÃO DE ADMIN
+// AUTENTICAÇÃO
 // ============================================================
 
 function gerarHash(texto) {
   const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, texto);
   return bytes.map((b) => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
 }
-
 function login(senha) {
   const hashArmazenado = obterConfig().senhaAdminHash;
-  if (!hashArmazenado) {
-    return { ok: false, error: 'Nenhuma senha configurada. Rode configurarSenhaAdmin() no editor.' };
-  }
-  if (gerarHash(senha || '') !== hashArmazenado) {
-    registrarLog('LOGIN_FALHOU', '-', '-');
-    return { ok: false, error: 'Senha incorreta.' };
-  }
+  if (!hashArmazenado) return { ok: false, error: 'Nenhuma senha configurada. Rode configurarSenhaAdmin() no editor.' };
+  if (gerarHash(senha || '') !== hashArmazenado) { registrarLog('LOGIN_FALHOU', '-', '-'); return { ok: false, error: 'Senha incorreta.' }; }
   const token = Utilities.getUuid();
   CacheService.getScriptCache().put('admin_' + token, 'valido', TOKEN_VALIDADE_SEGUNDOS);
   registrarLog('LOGIN_OK', '-', '-');
   return { ok: true, data: { token: token } };
 }
-
 function autenticado(token) {
   if (!token) return false;
   return CacheService.getScriptCache().get('admin_' + token) === 'valido';
@@ -244,20 +182,14 @@ function obterConfig() {
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.CONFIG);
   const linhas = aba.getDataRange().getValues();
   const config = {};
-  for (let i = 1; i < linhas.length; i++) {
-    config[linhas[i][0]] = linhas[i][1];
-  }
+  for (let i = 1; i < linhas.length; i++) config[linhas[i][0]] = linhas[i][1];
   return config;
 }
-
 function definirConfig(chave, valor) {
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.CONFIG);
   const linhas = aba.getDataRange().getValues();
   for (let i = 1; i < linhas.length; i++) {
-    if (linhas[i][0] === chave) {
-      aba.getRange(i + 1, 2).setValue(valor);
-      return;
-    }
+    if (linhas[i][0] === chave) { aba.getRange(i + 1, 2).setValue(valor); return; }
   }
   aba.appendRow([chave, valor]);
 }
@@ -271,70 +203,40 @@ function listarConcursos() {
   const linhas = aba.getDataRange().getValues();
   const resultado = [];
   for (let i = 1; i < linhas.length; i++) {
-    const l = linhas[i];
-    if (!l[0]) continue;
-    resultado.push(linhaParaConcurso(l));
+    if (!linhas[i][0]) continue;
+    resultado.push(linhaParaConcurso(linhas[i]));
   }
   return resultado;
 }
-
 function linhaParaConcurso(l) {
-  return {
-    id: l[0],
-    nome: l[1],
-    numero: l[2],
-    valorAposta: l[3],
-    premioEstimado: l[4],
-    dataLimite: l[5] instanceof Date ? l[5].toISOString() : l[5],
-    status: l[6],
-  };
+  return { id: l[0], nome: l[1], numero: l[2], valorAposta: l[3], premioEstimado: l[4], dataLimite: l[5] instanceof Date ? l[5].toISOString() : l[5], status: l[6] };
 }
-
 function obterConcursoAtivo() {
   const agora = new Date();
-  const concursos = listarConcursos().filter((c) => {
-    return c.status === 'ABERTO' && new Date(c.dataLimite) > agora;
-  });
+  const concursos = listarConcursos().filter((c) => c.status === 'ABERTO' && new Date(c.dataLimite) > agora);
   if (concursos.length === 0) return null;
   const ativo = concursos[concursos.length - 1];
   ativo.qtdParticipantes = contarApostasDoConcurso(ativo.id);
   return ativo;
 }
-
 function contarApostasDoConcurso(concursoId) {
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.APOSTAS);
   const linhas = aba.getDataRange().getValues();
   let total = 0;
-  for (let i = 1; i < linhas.length; i++) {
-    if (linhas[i][2] === concursoId) total++;
-  }
+  for (let i = 1; i < linhas.length; i++) if (linhas[i][2] === concursoId) total++;
   return total;
 }
-
 function criarConcurso(dados) {
   if (!dados.nome || !dados.dataLimite) return { ok: false, error: 'Nome e data limite são obrigatórios.' };
   const dataLimiteObj = new Date(dados.dataLimite);
-  if (isNaN(dataLimiteObj.getTime())) {
-    return { ok: false, error: 'Data limite inválida. Selecione a data pelo calendário no formulário.' };
-  }
-  if (dataLimiteObj <= new Date()) {
-    return { ok: false, error: 'A data limite precisa ser no futuro (verifique se não ficou uma data já passada).' };
-  }
+  if (isNaN(dataLimiteObj.getTime())) return { ok: false, error: 'Data limite inválida. Selecione a data pelo calendário no formulário.' };
+  if (dataLimiteObj <= new Date()) return { ok: false, error: 'A data limite precisa ser no futuro (verifique se não ficou uma data já passada).' };
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.CONCURSOS);
   const id = 'C' + Utilities.getUuid().slice(0, 8);
-  aba.appendRow([
-    id,
-    dados.nome,
-    dados.numero || 0,
-    dados.valorAposta || 5,
-    dados.premioEstimado || 0,
-    new Date(dados.dataLimite),
-    'ABERTO',
-  ]);
+  aba.appendRow([id, dados.nome, dados.numero || 0, dados.valorAposta || 5, dados.premioEstimado || 0, dataLimiteObj, 'ABERTO']);
   registrarLog('CONCURSO_CRIADO', id, '-');
   return { ok: true, data: { id: id } };
 }
-
 function editarConcurso(dados) {
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.CONCURSOS);
   const linhas = aba.getDataRange().getValues();
@@ -347,12 +249,8 @@ function editarConcurso(dados) {
       if (dados.premioEstimado !== undefined) aba.getRange(linha, 5).setValue(dados.premioEstimado);
       if (dados.dataLimite !== undefined) {
         const novaData = new Date(dados.dataLimite);
-        if (isNaN(novaData.getTime())) {
-          return { ok: false, error: 'Data limite inválida.' };
-        }
-        if (novaData <= new Date()) {
-          return { ok: false, error: 'A data limite precisa ser no futuro.' };
-        }
+        if (isNaN(novaData.getTime())) return { ok: false, error: 'Data limite inválida.' };
+        if (novaData <= new Date()) return { ok: false, error: 'A data limite precisa ser no futuro.' };
         aba.getRange(linha, 6).setValue(novaData);
       }
       if (dados.status !== undefined) aba.getRange(linha, 7).setValue(dados.status);
@@ -362,16 +260,11 @@ function editarConcurso(dados) {
   }
   return { ok: false, error: 'Concurso não encontrado.' };
 }
-
 function excluirConcurso(id) {
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.CONCURSOS);
   const linhas = aba.getDataRange().getValues();
   for (let i = 1; i < linhas.length; i++) {
-    if (linhas[i][0] === id) {
-      aba.deleteRow(i + 1);
-      registrarLog('CONCURSO_EXCLUIDO', id, '-');
-      return { ok: true };
-    }
+    if (linhas[i][0] === id) { aba.deleteRow(i + 1); registrarLog('CONCURSO_EXCLUIDO', id, '-'); return { ok: true }; }
   }
   return { ok: false, error: 'Concurso não encontrado.' };
 }
@@ -382,167 +275,94 @@ function excluirConcurso(id) {
 
 function criarParticipante(dados) {
   if (!dados.nome || !dados.whatsapp) return { ok: false, error: 'Nome e WhatsApp são obrigatórios.' };
-
   const whatsappLimpo = String(dados.whatsapp).replace(/\D/g, '');
   const existente = buscarParticipantePorWhatsappBruto(whatsappLimpo);
-  if (existente) {
-    return { ok: true, data: { id: existente.id } };
-  }
-
+  if (existente) return { ok: true, data: { id: existente.id } };
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.PARTICIPANTES);
   const id = 'P' + Utilities.getUuid().slice(0, 8);
   const agora = new Date();
-  aba.appendRow([
-    id,
-    dados.nome,
-    dados.nomeExibicao || dados.nome,
-    whatsappLimpo,
-    dados.cidade || '',
-    dados.estado || '',
-    dados.cpf || '',
-    Utilities.formatDate(agora, Session.getScriptTimeZone(), 'dd/MM/yyyy'),
-    Utilities.formatDate(agora, Session.getScriptTimeZone(), 'HH:mm'),
-  ]);
+  aba.appendRow([id, dados.nome, dados.nomeExibicao || dados.nome, whatsappLimpo, dados.cidade || '', dados.estado || '', dados.cpf || '',
+    Utilities.formatDate(agora, Session.getScriptTimeZone(), 'dd/MM/yyyy'), Utilities.formatDate(agora, Session.getScriptTimeZone(), 'HH:mm')]);
   registrarLog('PARTICIPANTE_CRIADO', id, whatsappLimpo);
   return { ok: true, data: { id: id } };
 }
-
 function buscarParticipantePorWhatsappBruto(whatsappLimpo) {
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.PARTICIPANTES);
   const linhas = aba.getDataRange().getValues();
   for (let i = 1; i < linhas.length; i++) {
     if (String(linhas[i][3]).replace(/\D/g, '') === whatsappLimpo) {
-      return {
-        id: linhas[i][0],
-        nome: linhas[i][1],
-        nomeExibicao: linhas[i][2],
-        whatsapp: linhas[i][3],
-        cidade: linhas[i][4],
-        estado: linhas[i][5],
-      };
+      return { id: linhas[i][0], nome: linhas[i][1], nomeExibicao: linhas[i][2], whatsapp: linhas[i][3], cidade: linhas[i][4], estado: linhas[i][5] };
     }
   }
   return null;
 }
-
-function buscarParticipantePorWhatsapp(whatsapp) {
-  return buscarParticipantePorWhatsappBruto(String(whatsapp || '').replace(/\D/g, ''));
-}
+function buscarParticipantePorWhatsapp(whatsapp) { return buscarParticipantePorWhatsappBruto(String(whatsapp || '').replace(/\D/g, '')); }
 
 // ============================================================
 // APOSTAS
 // ============================================================
 
 function criarAposta(dados) {
-  if (!dados.idParticipante || !dados.concursoId || !Array.isArray(dados.numeros)) {
-    return { ok: false, error: 'Dados incompletos para registrar a aposta.' };
-  }
-  if (dados.numeros.length < 6 || dados.numeros.length > 15) {
-    return { ok: false, error: 'A aposta deve ter entre 6 e 15 números.' };
-  }
-  if (new Set(dados.numeros).size !== dados.numeros.length) {
-    return { ok: false, error: 'Números repetidos na aposta.' };
-  }
+  if (!dados.idParticipante || !dados.concursoId || !Array.isArray(dados.numeros)) return { ok: false, error: 'Dados incompletos para registrar a aposta.' };
+  if (dados.numeros.length < 6 || dados.numeros.length > 15) return { ok: false, error: 'A aposta deve ter entre 6 e 15 números.' };
+  if (new Set(dados.numeros).size !== dados.numeros.length) return { ok: false, error: 'Números repetidos na aposta.' };
 
   const numerosOrdenados = [...dados.numeros].sort((a, b) => a - b).join(',');
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.APOSTAS);
   const linhas = aba.getDataRange().getValues();
   for (let i = 1; i < linhas.length; i++) {
-    const mesmoParticipante = linhas[i][1] === dados.idParticipante;
-    const mesmoConcurso = linhas[i][2] === dados.concursoId;
-    const mesmosNumeros = String(linhas[i][3]) === numerosOrdenados;
-    if (mesmoParticipante && mesmoConcurso && mesmosNumeros) {
+    if (linhas[i][1] === dados.idParticipante && linhas[i][2] === dados.concursoId && String(linhas[i][3]) === numerosOrdenados) {
       return { ok: false, error: 'Você já registrou essa combinação de números neste concurso.' };
     }
   }
-
   const concurso = listarConcursos().find((c) => c.id === dados.concursoId);
   if (!concurso) return { ok: false, error: 'Concurso não encontrado.' };
   if (concurso.status !== 'ABERTO') return { ok: false, error: 'Este concurso já está encerrado.' };
-  if (new Date() >= new Date(concurso.dataLimite)) {
-    return { ok: false, error: 'O prazo para apostar neste concurso já passou.' };
-  }
+  if (new Date() >= new Date(concurso.dataLimite)) return { ok: false, error: 'O prazo para apostar neste concurso já passou.' };
 
   const id = 'A' + Utilities.getUuid().slice(0, 8);
   const agora = new Date();
   const protocolo = dados.protocolo || ('MEGA-' + Utilities.getUuid().slice(0, 6).toUpperCase());
-
-  aba.appendRow([
-    id,
-    dados.idParticipante,
-    dados.concursoId,
-    numerosOrdenados,
-    dados.numeros.length,
-    dados.valor || 0,
-    dados.status || 'AGUARDANDO CONFERENCIA',
-    protocolo,
-    Utilities.formatDate(agora, Session.getScriptTimeZone(), 'dd/MM/yyyy'),
-    Utilities.formatDate(agora, Session.getScriptTimeZone(), 'HH:mm'),
-    '-',
-    '-',
-  ]);
+  aba.appendRow([id, dados.idParticipante, dados.concursoId, numerosOrdenados, dados.numeros.length, dados.valor || 0,
+    dados.status || 'AGUARDANDO CONFERENCIA', protocolo, Utilities.formatDate(agora, Session.getScriptTimeZone(), 'dd/MM/yyyy'),
+    Utilities.formatDate(agora, Session.getScriptTimeZone(), 'HH:mm'), '-', '-']);
   registrarLog('APOSTA_CRIADA', id, dados.idParticipante);
   return { ok: true, data: { id: id, protocolo: protocolo } };
 }
-
 function linhaParaAposta(l) {
-  return {
-    id: l[0],
-    idParticipante: l[1],
-    concursoId: l[2],
-    numeros: String(l[3]).split(',').map(Number),
-    quantidade: l[4],
-    valor: l[5],
-    status: l[6],
-    protocolo: l[7],
-    data: l[8],
-    hora: l[9],
-  };
+  return { id: l[0], idParticipante: l[1], concursoId: l[2], numeros: String(l[3]).split(',').map(Number), quantidade: l[4], valor: l[5], status: l[6], protocolo: l[7], data: l[8], hora: l[9] };
 }
-
 function consultarApostasPorWhatsapp(whatsapp) {
   const participante = buscarParticipantePorWhatsapp(whatsapp);
   if (!participante) return [];
-
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.APOSTAS);
   const linhas = aba.getDataRange().getValues();
   const resultado = [];
-  for (let i = 1; i < linhas.length; i++) {
-    if (linhas[i][1] === participante.id) resultado.push(linhaParaAposta(linhas[i]));
-  }
+  for (let i = 1; i < linhas.length; i++) if (linhas[i][1] === participante.id) resultado.push(linhaParaAposta(linhas[i]));
   return resultado.reverse();
 }
-
 function alterarStatusAposta(id, novoStatus) {
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.APOSTAS);
   const linhas = aba.getDataRange().getValues();
   for (let i = 1; i < linhas.length; i++) {
-    if (linhas[i][0] === id) {
-      aba.getRange(i + 1, 7).setValue(novoStatus);
-      registrarLog('STATUS_ALTERADO', id + ' -> ' + novoStatus, '-');
-      return { ok: true };
-    }
+    if (linhas[i][0] === id) { aba.getRange(i + 1, 7).setValue(novoStatus); registrarLog('STATUS_ALTERADO', id + ' -> ' + novoStatus, '-'); return { ok: true }; }
   }
   return { ok: false, error: 'Aposta não encontrada.' };
 }
-
 function listarApostasComParticipantes() {
   const abaApostas = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.APOSTAS);
   const abaParticipantes = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.PARTICIPANTES);
-
   const mapaParticipantes = {};
   const linhasParticipantes = abaParticipantes.getDataRange().getValues();
   for (let i = 1; i < linhasParticipantes.length; i++) {
     const l = linhasParticipantes[i];
     mapaParticipantes[l[0]] = { nome: l[1], nomeExibicao: l[2], whatsapp: l[3], cidade: l[4], estado: l[5] };
   }
-
   const linhasApostas = abaApostas.getDataRange().getValues();
   const resultado = [];
   for (let i = 1; i < linhasApostas.length; i++) {
     const aposta = linhaParaAposta(linhasApostas[i]);
-    const participante = mapaParticipantes[aposta.idParticipante] || {};
-    resultado.push(Object.assign({}, aposta, { participante: participante }));
+    resultado.push(Object.assign({}, aposta, { participante: mapaParticipantes[aposta.idParticipante] || {} }));
   }
   return resultado.reverse();
 }
@@ -553,19 +373,11 @@ function listarApostasComParticipantes() {
 
 function confirmarPagamento(dados) {
   if (!dados.idAposta) return { ok: false, error: 'ID da aposta é obrigatório.' };
-
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.PAGAMENTOS);
   const id = 'PG' + Utilities.getUuid().slice(0, 8);
   const agora = new Date();
-  aba.appendRow([
-    id,
-    dados.idAposta,
-    dados.pix || '-',
-    'AGUARDANDO CONFERENCIA',
-    dados.comprovanteUrl || '',
-    Utilities.formatDate(agora, Session.getScriptTimeZone(), 'dd/MM/yyyy'),
-    Utilities.formatDate(agora, Session.getScriptTimeZone(), 'HH:mm'),
-  ]);
+  aba.appendRow([id, dados.idAposta, dados.pix || '-', 'AGUARDANDO CONFERENCIA', dados.comprovanteUrl || '',
+    Utilities.formatDate(agora, Session.getScriptTimeZone(), 'dd/MM/yyyy'), Utilities.formatDate(agora, Session.getScriptTimeZone(), 'HH:mm')]);
   registrarLog('PAGAMENTO_REGISTRADO', dados.idAposta, '-');
   return { ok: true, data: { id: id } };
 }
@@ -576,65 +388,36 @@ function confirmarPagamento(dados) {
 
 function montarDashboard() {
   const apostas = listarApostasComParticipantes();
-
-  let valorArrecadado = 0;
-  let totalPago = 0;
-  let totalPendente = 0;
-  const porCidadeMapa = {};
-  const porEstadoMapa = {};
-  const porDiaMapa = {};
+  let valorArrecadado = 0, totalPago = 0, totalPendente = 0;
+  const porCidadeMapa = {}, porEstadoMapa = {}, porDiaMapa = {};
   const participantesUnicos = new Set();
-
   apostas.forEach((a) => {
     participantesUnicos.add(a.idParticipante);
-    if (a.status === 'PAGO') {
-      valorArrecadado += Number(a.valor) || 0;
-      totalPago += Number(a.valor) || 0;
-    } else if (a.status === 'AGUARDANDO CONFERENCIA' || a.status === 'PENDENTE') {
-      totalPendente += Number(a.valor) || 0;
-    }
-
+    if (a.status === 'PAGO') { valorArrecadado += Number(a.valor) || 0; totalPago += Number(a.valor) || 0; }
+    else if (a.status === 'AGUARDANDO CONFERENCIA' || a.status === 'PENDENTE') { totalPendente += Number(a.valor) || 0; }
     const cidade = a.participante.cidade || 'Não informado';
     porCidadeMapa[cidade] = (porCidadeMapa[cidade] || 0) + 1;
-
     const estado = a.participante.estado || '-';
     porEstadoMapa[estado] = (porEstadoMapa[estado] || 0) + 1;
-
     porDiaMapa[a.data] = (porDiaMapa[a.data] || 0) + 1;
   });
-
-  const paraArray = (mapa, chaveNome) =>
-    Object.keys(mapa).map((k) => ({ [chaveNome]: k, total: mapa[k] }));
-
+  const paraArray = (mapa, chaveNome) => Object.keys(mapa).map((k) => ({ [chaveNome]: k, total: mapa[k] }));
   return {
-    totalParticipantes: participantesUnicos.size,
-    valorArrecadado: valorArrecadado,
-    valorLiquido: valorArrecadado * 0.9,
-    valorPremio: valorArrecadado * 0.9,
-    totalPago: totalPago,
-    totalPendente: totalPendente,
+    totalParticipantes: participantesUnicos.size, valorArrecadado: valorArrecadado, valorLiquido: valorArrecadado * 0.9,
+    valorPremio: valorArrecadado * 0.9, totalPago: totalPago, totalPendente: totalPendente,
     porCidade: paraArray(porCidadeMapa, 'cidade').sort((a, b) => b.total - a.total).slice(0, 8),
-    porEstado: paraArray(porEstadoMapa, 'estado'),
-    porDia: paraArray(porDiaMapa, 'dia'),
+    porEstado: paraArray(porEstadoMapa, 'estado'), porDia: paraArray(porDiaMapa, 'dia'),
   };
 }
 
 // ============================================================
-// LOGS / AUDITORIA
+// LOGS
 // ============================================================
 
 function registrarLog(acao, detalhe, usuario) {
   try {
     const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ABA.LOGS);
     const agora = new Date();
-    aba.appendRow([
-      Utilities.formatDate(agora, Session.getScriptTimeZone(), 'dd/MM/yyyy'),
-      Utilities.formatDate(agora, Session.getScriptTimeZone(), 'HH:mm:ss'),
-      acao,
-      detalhe,
-      usuario,
-    ]);
-  } catch (err) {
-    // Nunca deixar uma falha de log quebrar a requisição principal.
-  }
+    aba.appendRow([Utilities.formatDate(agora, Session.getScriptTimeZone(), 'dd/MM/yyyy'), Utilities.formatDate(agora, Session.getScriptTimeZone(), 'HH:mm:ss'), acao, detalhe, usuario]);
+  } catch (err) { /* nunca deixar log quebrar a requisição principal */ }
 }

@@ -9,14 +9,7 @@ import { SkeletonCard } from '../../components/LoadingSkeleton';
 import type { Concurso } from '../../types';
 import AdminNav from './AdminNav';
 
-const CONCURSO_VAZIO = {
-  nome: '',
-  numero: 0,
-  valorAposta: 5,
-  premioEstimado: 0,
-  dataLimite: '',
-  status: 'ABERTO' as const,
-};
+const CONCURSO_VAZIO = { nome: '', numero: 0, valorAposta: 5, premioEstimado: 0, dataLimite: '', status: 'ABERTO' as const };
 
 export default function AdminConcursos() {
   const adminToken = useRequireAdmin();
@@ -34,85 +27,42 @@ export default function AdminConcursos() {
     if (resp.ok) setConcursos((resp.data as Concurso[]) ?? []);
     setCarregando(false);
   }
-
-  useEffect(() => {
-    if (adminToken) carregar();
-  }, [adminToken]);
-
+  useEffect(() => { if (adminToken) carregar(); }, [adminToken]);
   if (!adminToken) return null;
 
-  function abrirNovo() {
-    setForm(CONCURSO_VAZIO);
-    setEditandoId(null);
-    setMostrarForm(true);
-  }
-
+  function abrirNovo() { setForm(CONCURSO_VAZIO); setEditandoId(null); setMostrarForm(true); }
   function abrirEdicao(c: Concurso) {
-    setForm({
-      nome: c.nome,
-      numero: c.numero,
-      valorAposta: c.valorAposta,
-      premioEstimado: c.premioEstimado,
-      dataLimite: c.dataLimite?.slice(0, 16) ?? '',
-      status: c.status === 'ABERTO' ? 'ABERTO' : 'ABERTO',
-    });
+    setForm({ nome: c.nome, numero: c.numero, valorAposta: c.valorAposta, premioEstimado: c.premioEstimado, dataLimite: c.dataLimite?.slice(0, 16) ?? '', status: 'ABERTO' });
     setEditandoId(c.id);
     setMostrarForm(true);
   }
-
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
     if (!adminToken) return;
-    const resp = editandoId
-      ? await api.concursos.editar(editandoId, form, adminToken)
-      : await api.concursos.criar(form, adminToken);
-
-    if (!resp.ok) {
-      notificar(resp.error || 'Não foi possível salvar o concurso.', 'erro');
-      return;
-    }
+    const resp = editandoId ? await api.concursos.editar(editandoId, form, adminToken) : await api.concursos.criar(form, adminToken);
+    if (!resp.ok) { notificar(resp.error || 'Não foi possível salvar o concurso.', 'erro'); return; }
     notificar(editandoId ? 'Concurso atualizado.' : 'Concurso criado.', 'sucesso');
     setMostrarForm(false);
     carregar();
   }
-
   async function duplicar(c: Concurso) {
     if (!adminToken) return;
-    // Duplicar serve pra criar "o próximo" concurso — por isso a data limite
-    // NUNCA é copiada do original (que provavelmente já venceu). Sugere uma
-    // data 7 dias à frente; o admin pode editar depois clicando em "Editar".
     const dataLimiteSugerida = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    const resp = await api.concursos.criar(
-      { ...c, nome: `${c.nome} (cópia)`, numero: c.numero + 1, dataLimite: dataLimiteSugerida },
-      adminToken
-    );
-    if (resp.ok) {
-      notificar('Concurso duplicado com data limite sugerida para 7 dias à frente — edite se precisar ajustar.', 'sucesso');
-      carregar();
-    } else {
-      notificar(resp.error || 'Não foi possível duplicar o concurso.', 'erro');
-    }
+    const resp = await api.concursos.criar({ ...c, nome: `${c.nome} (cópia)`, numero: c.numero + 1, dataLimite: dataLimiteSugerida }, adminToken);
+    if (resp.ok) { notificar('Concurso duplicado com data limite sugerida para 7 dias à frente — edite se precisar ajustar.', 'sucesso'); carregar(); }
+    else { notificar(resp.error || 'Não foi possível duplicar o concurso.', 'erro'); }
   }
-
   async function encerrar(c: Concurso) {
     if (!adminToken) return;
     const resp = await api.concursos.editar(c.id, { status: 'ENCERRADO' }, adminToken);
-    if (resp.ok) {
-      notificar('Concurso encerrado.', 'info');
-      carregar();
-    }
+    if (resp.ok) { notificar('Concurso encerrado.', 'info'); carregar(); }
   }
-
   async function excluir() {
     if (!adminToken || !excluirId) return;
     const resp = await api.concursos.excluir(excluirId, adminToken);
     setExcluirId(null);
-    if (resp.ok) {
-      notificar('Concurso excluído.', 'sucesso');
-      carregar();
-    } else {
-      notificar(resp.error || 'Não foi possível excluir.', 'erro');
-    }
+    if (resp.ok) { notificar('Concurso excluído.', 'sucesso'); carregar(); }
+    else { notificar(resp.error || 'Não foi possível excluir.', 'erro'); }
   }
 
   return (
@@ -120,46 +70,23 @@ export default function AdminConcursos() {
       <AdminNav />
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Concursos</h1>
-        <button onClick={abrirNovo} className="flex items-center gap-2 bg-primary hover:bg-primary-dark text-white rounded-xl px-4 py-2 text-sm focus-ring">
-          <Plus size={16} /> Novo concurso
-        </button>
+        <button onClick={abrirNovo} className="flex items-center gap-2 bg-primary hover:bg-primary-dark text-white rounded-xl px-4 py-2 text-sm focus-ring"><Plus size={16} /> Novo concurso</button>
       </div>
-
       {mostrarForm && (
         <form onSubmit={salvar} className="bg-bg-card rounded-2xl p-5 border border-white/5 mb-6 grid sm:grid-cols-2 gap-4 animate-slideUp">
-          <Campo label="Nome">
-            <input className="input" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
-          </Campo>
-          <Campo label="Número do concurso">
-            <input type="number" className="input" value={form.numero} onChange={(e) => setForm({ ...form, numero: Number(e.target.value) })} required />
-          </Campo>
-          <Campo label="Valor da aposta (R$)">
-            <input type="number" step="0.01" className="input" value={form.valorAposta} onChange={(e) => setForm({ ...form, valorAposta: Number(e.target.value) })} required />
-          </Campo>
-          <Campo label="Prêmio estimado (R$)">
-            <input type="number" step="0.01" className="input" value={form.premioEstimado} onChange={(e) => setForm({ ...form, premioEstimado: Number(e.target.value) })} required />
-          </Campo>
+          <Campo label="Nome"><input className="input" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required /></Campo>
+          <Campo label="Número do concurso"><input type="number" className="input" value={form.numero} onChange={(e) => setForm({ ...form, numero: Number(e.target.value) })} required /></Campo>
+          <Campo label="Valor da aposta (R$)"><input type="number" step="0.01" className="input" value={form.valorAposta} onChange={(e) => setForm({ ...form, valorAposta: Number(e.target.value) })} required /></Campo>
+          <Campo label="Prêmio estimado (R$)"><input type="number" step="0.01" className="input" value={form.premioEstimado} onChange={(e) => setForm({ ...form, premioEstimado: Number(e.target.value) })} required /></Campo>
           <Campo label="Data limite para apostas">
-            <input
-              type="datetime-local"
-              className="input"
-              value={form.dataLimite}
-              min={new Date(Date.now() + 5 * 60000).toISOString().slice(0, 16)}
-              onChange={(e) => setForm({ ...form, dataLimite: e.target.value })}
-              required
-            />
+            <input type="datetime-local" className="input" value={form.dataLimite} min={new Date(Date.now() + 5 * 60000).toISOString().slice(0, 16)} onChange={(e) => setForm({ ...form, dataLimite: e.target.value })} required />
           </Campo>
           <div className="sm:col-span-2 flex gap-3 justify-end">
-            <button type="button" onClick={() => setMostrarForm(false)} className="px-4 py-2 rounded-xl text-sm text-gray-300 hover:bg-white/5 focus-ring">
-              Cancelar
-            </button>
-            <button className="px-4 py-2 rounded-xl text-sm font-semibold bg-primary hover:bg-primary-dark text-white focus-ring">
-              Salvar
-            </button>
+            <button type="button" onClick={() => setMostrarForm(false)} className="px-4 py-2 rounded-xl text-sm text-gray-300 hover:bg-white/5 focus-ring">Cancelar</button>
+            <button className="px-4 py-2 rounded-xl text-sm font-semibold bg-primary hover:bg-primary-dark text-white focus-ring">Salvar</button>
           </div>
         </form>
       )}
-
       {carregando ? (
         <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}</div>
       ) : (
@@ -169,25 +96,17 @@ export default function AdminConcursos() {
               <div>
                 <p className="font-semibold">{c.nome} · #{c.numero}</p>
                 <p className="text-sm text-gray-400">
-                  {formatarMoeda(c.valorAposta)} por número · Prêmio {formatarMoeda(c.premioEstimado)} ·{' '}
-                  <span className={c.status === 'ABERTO' ? 'text-primary-light' : 'text-gray-500'}>{c.status}</span>
+                  {formatarMoeda(c.valorAposta)} por número · Prêmio {formatarMoeda(c.premioEstimado)} · <span className={c.status === 'ABERTO' ? 'text-primary-light' : 'text-gray-500'}>{c.status}</span>
                 </p>
                 <p className="text-xs mt-1">
-                  Fecha em: {new Date(c.dataLimite).toLocaleString('pt-BR')}
-                  {' '}
-                  {new Date(c.dataLimite) <= new Date() ? (
-                    <span className="text-red-400 font-semibold">(venceu — apostas bloqueadas)</span>
-                  ) : (
-                    <span className="text-gray-500">(ainda dentro do prazo)</span>
-                  )}
+                  Fecha em: {new Date(c.dataLimite).toLocaleString('pt-BR')}{' '}
+                  {new Date(c.dataLimite) <= new Date() ? (<span className="text-red-400 font-semibold">(venceu — apostas bloqueadas)</span>) : (<span className="text-gray-500">(ainda dentro do prazo)</span>)}
                 </p>
               </div>
               <div className="flex gap-1">
                 <IconBtn onClick={() => abrirEdicao(c)} titulo="Editar"><Pencil size={15} /></IconBtn>
                 <IconBtn onClick={() => duplicar(c)} titulo="Duplicar"><Copy size={15} /></IconBtn>
-                {c.status === 'ABERTO' && (
-                  <IconBtn onClick={() => encerrar(c)} titulo="Encerrar"><Power size={15} /></IconBtn>
-                )}
+                {c.status === 'ABERTO' && (<IconBtn onClick={() => encerrar(c)} titulo="Encerrar"><Power size={15} /></IconBtn>)}
                 <IconBtn onClick={() => setExcluirId(c.id)} titulo="Excluir" perigo><Trash2 size={15} /></IconBtn>
               </div>
             </div>
@@ -195,37 +114,13 @@ export default function AdminConcursos() {
           {concursos.length === 0 && <p className="text-gray-400 text-center py-10">Nenhum concurso cadastrado ainda.</p>}
         </div>
       )}
-
-      <ConfirmDialog
-        aberto={!!excluirId}
-        titulo="Excluir concurso"
-        mensagem="Essa ação não pode ser desfeita. As apostas ligadas a esse concurso continuarão na planilha, mas o concurso some da lista."
-        confirmarLabel="Excluir"
-        perigo
-        onConfirmar={excluir}
-        onCancelar={() => setExcluirId(null)}
-      />
+      <ConfirmDialog aberto={!!excluirId} titulo="Excluir concurso" mensagem="Essa ação não pode ser desfeita." confirmarLabel="Excluir" perigo onConfirmar={excluir} onCancelar={() => setExcluirId(null)} />
     </div>
   );
 }
-
 function Campo({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-sm text-gray-300 mb-1">{label}</label>
-      {children}
-    </div>
-  );
+  return (<div><label className="block text-sm text-gray-300 mb-1">{label}</label>{children}</div>);
 }
-
 function IconBtn({ children, onClick, titulo, perigo = false }: { children: React.ReactNode; onClick: () => void; titulo: string; perigo?: boolean }) {
-  return (
-    <button
-      onClick={onClick}
-      title={titulo}
-      className={`p-2 rounded-lg hover:bg-white/5 focus-ring ${perigo ? 'text-red-400 hover:bg-red-500/10' : 'text-gray-300'}`}
-    >
-      {children}
-    </button>
-  );
+  return (<button onClick={onClick} title={titulo} className={`p-2 rounded-lg hover:bg-white/5 focus-ring ${perigo ? 'text-red-400 hover:bg-red-500/10' : 'text-gray-300'}`}>{children}</button>);
 }

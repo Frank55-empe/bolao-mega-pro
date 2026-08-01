@@ -23,16 +23,13 @@ export default function App() {
           <Route path="/pagamento" element={<Pagamento />} />
           <Route path="/consulta" element={<Consulta />} />
           <Route path="/regulamento" element={<Regulamento />} />
-
           <Route path="/admin" element={<AdminLogin />} />
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
           <Route path="/admin/concursos" element={<AdminConcursos />} />
           <Route path="/admin/participantes" element={<AdminParticipantes />} />
         </Routes>
       </main>
-      <footer className="text-center text-xs text-gray-600 py-6">
-        Bolão da Mega PRO · feito com React + Google Sheets
-      </footer>
+      <footer className="text-center text-xs text-gray-600 py-6">Bolão da Mega PRO · feito com React + Google Sheets</footer>
     </div>
   );
 }
